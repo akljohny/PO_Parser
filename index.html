@@ -497,26 +497,31 @@ async function loadEmails() {
     }
 
     // Fetch metadata for each message in parallel
-    // Note: we trust the search query (filename:pdf) to guarantee PDF attachment exists
-    // Metadata format does not return attachment info so we skip the PDF check here
     const metas = await Promise.all(messages.slice(0,15).map(async m => {
-      const r = await fetch(
-        `https://gmail.googleapis.com/gmail/v1/users/me/messages/${m.id}` +
-        '?format=metadata&metadataHeaders=Subject&metadataHeaders=From&metadataHeaders=Date',
-        { headers: { Authorization: 'Bearer ' + token } }
-      );
-      if (!r.ok) return null;
-      const d = await r.json();
-      const hdrs = {};
-      (d.payload?.headers || []).forEach(h => hdrs[h.name] = h.value);
-      return {
-        id:      m.id,
-        subject: hdrs['Subject'] || '(no subject)',
-        from:    hdrs['From']    || '',
-        date:    hdrs['Date']    || ''
-      };
+      try {
+        const r = await fetch(
+          `https://gmail.googleapis.com/gmail/v1/users/me/messages/${m.id}?format=metadata&metadataHeaders=Subject&metadataHeaders=From&metadataHeaders=Date`,
+          { headers: { Authorization: 'Bearer ' + token } }
+        );
+        if (!r.ok) { console.warn('Meta fetch failed for', m.id, r.status); return null; }
+        const d = await r.json();
+        const hdrs = {};
+        (d.payload?.headers || []).forEach(h => hdrs[h.name] = h.value);
+        const result = {
+          id:      m.id,
+          subject: hdrs['Subject'] || '(no subject)',
+          from:    hdrs['From']    || '',
+          date:    hdrs['Date']    || ''
+        };
+        console.log('Email found:', result.subject);
+        return result;
+      } catch(err) {
+        console.error('Meta fetch error for', m.id, err);
+        return null;
+      }
     }));
 
+    console.log('Total metas fetched:', metas.filter(e => e !== null).length);
     emailList = metas.filter(e => e !== null);
     document.getElementById('inboxCount').textContent = emailList.length + ' email(s)';
     renderInbox();
