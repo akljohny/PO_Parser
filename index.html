@@ -472,10 +472,13 @@ async function loadEmails() {
   emailList = [];
 
   try {
-    // Search Gmail for PO emails with PDF attachments
+    // Search Gmail for PO emails with PDF attachments from Forestdale
+    const gmailQuery = new URLSearchParams({
+      q: 'from:forestdale.ca has:attachment filename:pdf',
+      maxResults: '20'
+    });
     const resp = await fetch(
-      'https://gmail.googleapis.com/gmail/v1/users/me/messages' +
-      '?q=subject%3A%22purchase+order%22+has%3Aattachment+filename%3Apdf&maxResults=20',
+      'https://gmail.googleapis.com/gmail/v1/users/me/messages?' + gmailQuery.toString(),
       { headers: { Authorization: 'Bearer ' + token } }
     );
 
@@ -494,6 +497,8 @@ async function loadEmails() {
     }
 
     // Fetch metadata for each message in parallel
+    // Note: we trust the search query (filename:pdf) to guarantee PDF attachment exists
+    // Metadata format does not return attachment info so we skip the PDF check here
     const metas = await Promise.all(messages.slice(0,15).map(async m => {
       const r = await fetch(
         `https://gmail.googleapis.com/gmail/v1/users/me/messages/${m.id}` +
@@ -508,12 +513,11 @@ async function loadEmails() {
         id:      m.id,
         subject: hdrs['Subject'] || '(no subject)',
         from:    hdrs['From']    || '',
-        date:    hdrs['Date']    || '',
-        hasPdf:  checkForPdf(d.payload)
+        date:    hdrs['Date']    || ''
       };
     }));
 
-    emailList = metas.filter(e => e && e.hasPdf);
+    emailList = metas.filter(e => e !== null);
     document.getElementById('inboxCount').textContent = emailList.length + ' email(s)';
     renderInbox();
 
