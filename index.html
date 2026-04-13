@@ -110,6 +110,13 @@
     .auth-actions { margin-left: 0; width: 100%; }
   }
 </style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script>
+  // Set pdf.js worker
+  if (typeof pdfjsLib !== 'undefined') {
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  }
+</script>
 </head>
 <body>
 <div class="wrap">
@@ -664,10 +671,42 @@ async function processSelected() {
       const base64 = attData.data.replace(/-/g,'+').replace(/_/g,'/');
       log('s1log', '  ✓ PDF ready (' + (base64.length/1024).toFixed(0) + ' KB)', 'log-ok');
 
-      // 4. Send to Claude via Cloudflare Worker (with retry on 529)
+      // 4. Extract text from PDF using pdf.js (much cheaper than sending full PDF)
+      log('s1log', '  → Extracting text from PDF...');
+      let pdfText = '';
+      try {
+        // Convert base64 to Uint8Array for pdf.js
+        const binaryStr = atob(base64);
+        const bytes = new Uint8Array(binaryStr.length);
+        for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
+
+        const pdfjsLib = window['pdfjs-dist/build/pdf'] || window.pdfjsLib;
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+        const pdfDoc = await pdfjsLib.getDocument({ data: bytes }).promise;
+        for (let p = 1; p <= pdfDoc.numPages; p++) {
+          const page = await pdfDoc.getPage(p);
+          const tc   = await page.getTextContent();
+          pdfText   += tc.items.map(i => i.str).join(' ') + '\n';
+        }
+        log('s1log', `  ✓ Text extracted (${pdfText.length} chars, ~${Math.round(pdfText.length/4)} tokens)`, 'log-ok');
+      } catch(pdfErr) {
+        // Fallback to sending full PDF if text extraction fails
+        log('s1log', '  ⚠ Text extraction failed, sending full PDF (more tokens)...');
+        pdfText = null;
+      }
+
+      // 5. Send to Claude via Cloudflare Worker
       log('s1log', '  → Sending to Claude AI...');
       let cd = null;
       for (let attempt = 1; attempt <= 3; attempt++) {
+        const messageContent = pdfText
+          ? [{ type: 'text', text: 'Here is the purchase order text extracted from the PDF:\n\n' + pdfText + '\n\n' + EXTRACTION_PROMPT }]
+          : [
+              { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: base64 } },
+              { type: 'text', text: EXTRACTION_PROMPT }
+            ];
+
         const claudeResp = await fetch(cfWorkerUrl + '/anthropic/v1/messages', {
           method: 'POST',
           headers: {
@@ -678,10 +717,7 @@ async function processSelected() {
           body: JSON.stringify({
             model:      'claude-sonnet-4-20250514',
             max_tokens: 4096,
-            messages: [{ role: 'user', content: [
-              { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: base64 } },
-              { type: 'text', text: EXTRACTION_PROMPT }
-            ]}]
+            messages: [{ role: 'user', content: messageContent }]
           })
         });
         if (claudeResp.status === 529) {
