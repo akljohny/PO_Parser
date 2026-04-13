@@ -269,11 +269,16 @@ CASE 2 - Text description followed by customer: "HD Sills - LEGEND" or "P1870 - 
   - Customer = the LAST segment after the final " - ", trimmed
   - Description = everything before the last " - ", trimmed (same for all rows)
 
-CASE 3 - Plain customer name only (letters and spaces, no dashes): "AQUEST", "THREE H", "GLOBAL"
-  Detection: header contains only letters and spaces, no dashes at all
-  - Customer = that header value (same for all rows)
+CASE 3 - Plain customer name only (letters and spaces, no dashes): "AQUEST", "THREE H", "GLOBAL", "GLOBAL CONTRACT", "LEGEND"
+  Detection: header contains only letters and spaces (no dashes, no digits)
+  - Customer = that header value (same for all rows) — examples: "GLOBAL", "GLOBAL CONTRACT", "THREE H", "LEGEND", "AQUEST"
   - Description = the full text description line that appears directly below each part number in the line items table.
+    This is the raw part description text exactly as it appears under each part number, for example:
+      * "FLAT - LGHTFLTFTBTMPLT - 0.250'' HRPO REV 2"
+      * "VTPBTBL085D 12GA HRPO REV 2"
+      * "TBL-045-D (BEAM BRACKET) 10ga HRPO REV 1"
     Use the complete description text for each line item individually.
+    NEVER use the project header (e.g. "GLOBAL CONTRACT") as the Description.
 
 CRITICAL: The project header line is ALWAYS a short standalone line above the table header row.
 Do NOT confuse the line item description text with the project header line.
@@ -714,10 +719,14 @@ async function processSelected() {
 
     document.getElementById('erow_' + emailId)?.classList.remove('processing');
 
-    // Wait 3 seconds between emails to avoid API overload
+    // Wait 60 seconds between emails to stay within Tier 1 token rate limits
     if (i < ids.length - 1) {
-      log('s1log', '  ⏳ Waiting 3s before next email...');
-      await new Promise(res => setTimeout(res, 3000));
+      log('s1log', '  ⏳ Waiting 60s before next email (API rate limit)...');
+      // Countdown
+      for (let s = 60; s > 0; s--) {
+        setStageStatus(1, `Rate limit pause: ${s}s...`);
+        await new Promise(res => setTimeout(res, 1000));
+      }
     }
   }
 
