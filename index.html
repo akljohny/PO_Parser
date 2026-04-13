@@ -659,26 +659,38 @@ async function processSelected() {
       const base64 = attData.data.replace(/-/g,'+').replace(/_/g,'/');
       log('s1log', '  ✓ PDF ready (' + (base64.length/1024).toFixed(0) + ' KB)', 'log-ok');
 
-      // 4. Send to Claude via Cloudflare Worker
+      // 4. Send to Claude via Cloudflare Worker (with retry on 529)
       log('s1log', '  → Sending to Claude AI...');
-      const claudeResp = await fetch(cfWorkerUrl + '/anthropic/v1/messages', {
-        method: 'POST',
-        headers: {
-          'Content-Type':      'application/json',
-          'x-api-key':         anthropicKey,
-          'anthropic-version': '2023-06-01'
-        },
-        body: JSON.stringify({
-          model:      'claude-sonnet-4-20250514',
-          max_tokens: 4096,
-          messages: [{ role: 'user', content: [
-            { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: base64 } },
-            { type: 'text', text: EXTRACTION_PROMPT }
-          ]}]
-        })
-      });
-
-      const cd = await claudeResp.json();
+      let cd = null;
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        const claudeResp = await fetch(cfWorkerUrl + '/anthropic/v1/messages', {
+          method: 'POST',
+          headers: {
+            'Content-Type':      'application/json',
+            'x-api-key':         anthropicKey,
+            'anthropic-version': '2023-06-01'
+          },
+          body: JSON.stringify({
+            model:      'claude-sonnet-4-20250514',
+            max_tokens: 4096,
+            messages: [{ role: 'user', content: [
+              { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: base64 } },
+              { type: 'text', text: EXTRACTION_PROMPT }
+            ]}]
+          })
+        });
+        if (claudeResp.status === 529) {
+          if (attempt < 3) {
+            log('s1log', `  ⚠ API overloaded, retrying in 5s... (attempt ${attempt}/3)`, '');
+            await new Promise(res => setTimeout(res, 5000));
+            continue;
+          } else {
+            throw new Error('Anthropic API overloaded (529) after 3 attempts. Please try again in a moment.');
+          }
+        }
+        cd = await claudeResp.json();
+        break;
+      }
       if (cd.error) throw new Error(cd.error.message);
       if (!cd.content) throw new Error('Unexpected Claude response');
 
@@ -701,6 +713,12 @@ async function processSelected() {
     }
 
     document.getElementById('erow_' + emailId)?.classList.remove('processing');
+
+    // Wait 3 seconds between emails to avoid API overload
+    if (i < ids.length - 1) {
+      log('s1log', '  ⏳ Waiting 3s before next email...');
+      await new Promise(res => setTimeout(res, 3000));
+    }
   }
 
   if (!allRows.length) {
