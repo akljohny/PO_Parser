@@ -406,12 +406,15 @@ function startGoogleAuth() {
 function setToken(token, expiresIn) {
   accessToken = token;
   tokenExpiry = Date.now() + expiresIn * 1000;
-  document.getElementById('authDot').className     = 'auth-dot connected';
-  document.getElementById('authLabel').textContent  = 'Gmail connected ✓';
+  document.getElementById('authLabel').textContent  = 'Gmail — Connected ✓';
   document.getElementById('authSub').textContent    = 'Signed in successfully';
   document.getElementById('connectBtn').style.display    = 'none';
   document.getElementById('disconnectBtn').style.display = '';
   document.getElementById('loadBtn').disabled = false;
+  const heroDot = document.getElementById('authDotHero');
+  const heroSub = document.getElementById('authSubHero');
+  if (heroDot) heroDot.className = 'status-dot connected';
+  if (heroSub) heroSub.textContent = 'Gmail connected';
   clearAlert();
   startCountdown(expiresIn);
 }
@@ -442,13 +445,16 @@ function disconnectGmail(silent = false) {
   accessToken = null;
   tokenExpiry = 0;
   if (timerInterval) clearInterval(timerInterval);
-  document.getElementById('authDot').className     = 'auth-dot';
-  document.getElementById('authLabel').textContent  = 'Not connected';
-  document.getElementById('authSub').textContent    = 'Click "Connect Gmail" — a Google login popup will open';
+  document.getElementById('authLabel').textContent  = 'Gmail — Not Connected';
+  document.getElementById('authSub').textContent    = 'Sign in with your Forestdale Gmail account to load PO emails';
   document.getElementById('tokenTimer').style.display = 'none';
   document.getElementById('connectBtn').style.display    = '';
   document.getElementById('disconnectBtn').style.display = 'none';
   document.getElementById('loadBtn').disabled = true;
+  const heroDot = document.getElementById('authDotHero');
+  const heroSub = document.getElementById('authSubHero');
+  if (heroDot) heroDot.className = 'status-dot';
+  if (heroSub) heroSub.textContent = 'Not connected';
   if (!silent) document.getElementById('inboxPanel').classList.remove('visible');
 }
 
@@ -929,24 +935,6 @@ disconnectGmail = function(silent) {
 };
 </script>
 
-<script>
-// Sync hero dot with auth state
-(function() {
-  const _origSetToken = setToken;
-  const _origDisconnect = disconnectGmail;
-  setToken = function(token, expiresIn) {
-    _origSetToken(token, expiresIn);
-    document.getElementById('authDotHero').className = 'status-dot connected';
-    document.getElementById('authSubHero').textContent = 'Gmail connected';
-    document.getElementById('authLabel').textContent = 'Gmail — Connected ✓';
-  };
-  disconnectGmail = function(silent) {
-    _origDisconnect(silent);
-    document.getElementById('authDotHero').className = 'status-dot';
-    document.getElementById('authSubHero').textContent = 'Not connected';
-    document.getElementById('authLabel').textContent = 'Gmail — Not Connected';
-  };
-})();
-</script>
+
 </body>
 </html>
